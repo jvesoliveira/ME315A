@@ -1,0 +1,134 @@
+---
+title: "ME315A_Lab08"
+author: "João Vitor Expedito Silva de Oliveira RA:294836"
+format: pdf
+editor: source
+---
+
+## Objetivo
+
+Dados relacionais são uma constante no exercício da profissão do estatístico. Esta estratégia permite uma representação mais efetiva de dados estruturados, oferecendo a possibilidade de análises computacionalmente mais eficientes.
+
+## Os Dados
+
+-  1. `title.basics0.tsv.gz` (Informações Básicas dos Filmes);
+
+- 2. `title.ratings.tsv.gz` (Avaliações dos Filmes);
+
+- 3. `title.principals0.tsv.gz` (Elenco e Equipe Técnica).
+
+## Atividade
+
+Utilizando apenas operações por meio da biblioteca polars, responda:
+
+```{python}
+import polars as pl
+
+# Leitura das informações básicas dos filmes
+basics = pl.read_csv(
+    "title.basics0.tsv.gz",
+    separator="\t",
+    null_values="\\N",
+    quote_char=None,
+    infer_schema_length=0,
+    columns=["tconst", "titleType", "primaryTitle", "genres"]
+)
+
+# Leitura das avaliações
+ratings = pl.read_csv(
+    "title.ratings.tsv.gz",
+    separator="\t",
+    null_values="\\N",
+    quote_char=None,
+    infer_schema_length=0
+).with_columns(
+    pl.col("averageRating").cast(pl.Float64),
+    pl.col("numVotes").cast(pl.Int64)
+)
+
+# Seleção dos filmes e integração com as avaliações
+filmes = (
+    basics
+    .filter(pl.col("titleType") == "movie")
+    .join(ratings, on="tconst", how="inner")
+)
+
+filmes.head()
+```
+
+1. Quais são os 5 filmes com as maiores notas (`averageRating`)? Apresente uma solução capaz de desempatar os filmes baseando-se no número de votos recebidos.
+
+```{python}
+(
+    filmes
+    .sort(
+        ["averageRating", "numVotes"],
+        descending=[True, True]
+    )
+    .select([
+        "primaryTitle",
+        "averageRating",
+        "numVotes"
+    ])
+    .head(5)
+)
+```
+
+2. Qual é o gênero mais frequente entre os filmes com nota maior que 8?
+
+```{python}
+(
+    filmes
+    .filter(pl.col("averageRating") > 8)
+    .select(
+        pl.col("genres").str.split(",")
+    )
+    .explode("genres")
+    .drop_nulls("genres")
+    .filter(pl.col("genres") != "")
+    .group_by("genres")
+    .len()
+    .sort("len", descending=True)
+    .head(1)
+)
+```
+
+3. Quais são os 3 atores/atrizes que mais participaram de filmes com nota maior que 7.5?
+
+```{python}
+ids_filmes = (
+    filmes
+    .filter(pl.col("averageRating") > 7.5)
+    .select("tconst")
+)
+
+(
+    pl.scan_csv(
+        "title.principals0.tsv.gz",
+        separator="\t",
+        null_values="\\N",
+        quote_char=None,
+        infer_schema_length=0
+    )
+    .filter(
+        pl.col("category").is_in(["actor", "actress"])
+    )
+    .join(
+        ids_filmes.lazy(),
+        on="tconst",
+        how="inner"
+    )
+    .select(["tconst", "nconst"])
+    .unique()
+    .group_by("nconst")
+    .len()
+    .sort("len", descending=True)
+    .head(3)
+    .collect()
+)
+```
+```{r}
+Sys.setenv(TZ = 'America/Sao_Paulo')
+Sys.time()
+```
+
